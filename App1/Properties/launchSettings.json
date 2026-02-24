@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "QueryToExcell (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "QueryToExcell (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
