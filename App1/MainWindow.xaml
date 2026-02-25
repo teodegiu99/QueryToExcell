@@ -81,21 +81,43 @@
                        Title="Inserisci Nuova Estrazione" 
                        PrimaryButtonText="Salva Estrazione" 
                        CloseButtonText="Annulla"
-                       PrimaryButtonClick="DialogNuovaQuery_PrimaryButtonClick">
-            <ScrollViewer>
-                <StackPanel Spacing="10" Width="800">
-                    <TextBox x:Name="TxtTitolo" Header="Titolo Estrazione (es. Vendite)" />
+                       PrimaryButtonClick="DialogNuovaQuery_PrimaryButtonClick"
+                       FullSizeDesired="True">
 
-                    <TextBox x:Name="TxtSql" Header="Query SQL (SENZA punto e virgola finale. Usa :Nome per Oracle)" 
-                             AcceptsReturn="True" MinHeight="300" MaxHeight="500" TextWrapping="NoWrap"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                             FontFamily="Consolas" />
+            <ContentDialog.Resources>
+                <x:Double x:Key="ContentDialogMaxWidth">4000</x:Double>
+            </ContentDialog.Resources>
 
-                    <TextBlock Text="Variabili (Parametri SQL)" FontWeight="Bold" Margin="0,15,0,0"/>
-                    <StackPanel x:Name="ParametersListPanel" Spacing="5" />
-                    <Button Content="➕ Aggiungi Variabile" Click="BtnAddParameterRow_Click" Margin="0,10,0,0"/>
-                </StackPanel>
-            </ScrollViewer>
+            <Grid Margin="0,10,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <TextBox Grid.Row="0" x:Name="TxtTitolo" Header="Titolo Estrazione (es. Vendite)" Margin="0,0,0,15" />
+
+                <TextBox Grid.Row="1" x:Name="TxtSql" Header="Query SQL (SENZA punto e virgola finale. Usa :Nome per Oracle)" 
+                         AcceptsReturn="True" TextWrapping="NoWrap"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                         FontFamily="Consolas" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" />
+
+                <ScrollViewer Grid.Row="2" Margin="0,15,0,0" MaxHeight="250" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock Text="Variabili (Parametri SQL)" FontWeight="Bold"/>
+                        <StackPanel x:Name="ParametersListPanel" Spacing="5" />
+                        <Button Content="➕ Aggiungi Variabile" Click="BtnAddParameterRow_Click" Margin="0,10,0,0"/>
+
+                        <Border BorderBrush="{ThemeResource SurfaceStrokeColorDefaultBrush}" BorderThickness="0,1,0,0" Margin="0,20,0,15" />
+                        <TextBlock Text="Utenti Autorizzati (Solo loro potranno usare questa estrazione)" FontWeight="Bold" Margin="0,0,0,5"/>
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBox x:Name="TxtNuovoUtente" PlaceholderText="es. Mario.Rossi o DOMINIO\Mario" Width="300" />
+                            <Button Content="Aggiungi Utente" Click="BtnAddUtenteRow_Click" />
+                        </StackPanel>
+                        <StackPanel x:Name="UsersListPanel" Spacing="5" Margin="0,10,0,0" />
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
         </ContentDialog>
 
         <Grid x:Name="LoadingOverlay" Background="{ThemeResource LayerOnAcrylicFillColorDefaultBrush}" Visibility="Collapsed">

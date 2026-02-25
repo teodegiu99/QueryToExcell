@@ -48,6 +48,8 @@ namespace QueryToExcell
             // Pulisce i campi se erano stati riempiti precedentemente
             TxtTitolo.Text = "";
             TxtSql.Text = "";
+            UsersListPanel.Children.Clear(); // <-- AGGIUNGI QUESTO
+            TxtNuovoUtente.Text = "";
             ParametersListPanel.Children.Clear(); // Svuota i parametri
 
             DialogNuovaQuery.XamlRoot = this.Content.XamlRoot;
@@ -108,10 +110,16 @@ namespace QueryToExcell
                         });
                     }
                 }
+                var utentiAbilitati = new List<string>();
+                foreach (StackPanel row in UsersListPanel.Children)
+                {
+                    var txtUsername = (TextBox)row.Children[0];
+                    utentiAbilitati.Add(txtUsername.Text);
+                }
 
                 // Salviamo su DB!
                 var dbService = new DatabaseService();
-                dbService.SalvaNuovaQuery(TxtTitolo.Text, TxtSql.Text, parametri);
+                dbService.SalvaNuovaQuery(TxtTitolo.Text, TxtSql.Text, parametri, utentiAbilitati);
 
                 // Mostriamo un avviso rapido (facoltativo)
                 TxtUserInfo.Text = $"Utente: {CurrentWindowsUser} - ✅ Query '{TxtTitolo.Text}' salvata con successo!";
@@ -125,19 +133,68 @@ namespace QueryToExcell
             }
         }
 
-     private void CaricaListaQuery()
-{
-    var dbService = new DatabaseService();
-    var listaDati = dbService.OttieniTutteLeQuery();
+        private void CaricaListaQuery()
+        {
+            var dbService = new DatabaseService();
+            // Passiamo chi siamo al database!
+            var listaDati = dbService.OttieniTutteLeQuery(CurrentWindowsUser, IsCedUser);
 
-    // Se l'utente fa parte del CED (IsCedUser = true), rendiamo visibile il cestino
-    foreach (var query in listaDati)
-    {
-        query.PulsanteEliminaVisibile = this.IsCedUser ? Visibility.Visible : Visibility.Collapsed;
-    }
+            foreach (var query in listaDati)
+            {
+                query.PulsanteEliminaVisibile = this.IsCedUser ? Visibility.Visible : Visibility.Collapsed;
+            }
 
-    ListaEstrazioni.ItemsSource = listaDati;
-}
+            ListaEstrazioni.ItemsSource = listaDati;
+        }
+
+        private async void BtnAddUtenteRow_Click(object sender, RoutedEventArgs e)
+        {
+            string usernameInserito = TxtNuovoUtente.Text.Trim();
+
+            if (string.IsNullOrWhiteSpace(usernameInserito)) return;
+
+            var dbService = new DatabaseService();
+
+            // 1. CONTROLLO DATABASE: L'utente esiste davvero?
+            if (!dbService.EsisteUtenteApp(usernameInserito))
+            {
+                var errDialog = new ContentDialog
+                {
+                    Title = "Utente non trovato",
+                    Content = $"L'utente '{usernameInserito}' non è presente nella tabella di sistema (utenti_app).\nVerifica che sia scritto correttamente.",
+                    CloseButtonText = "Ok",
+                    XamlRoot = this.Content.XamlRoot
+                };
+                await errDialog.ShowAsync();
+                return; // Blocca tutto, non aggiunge la riga!
+            }
+
+            // 2. CONTROLLO DOPPIONI: Evitiamo che il CED inserisca due volte lo stesso nome nella modale
+            foreach (StackPanel existingRow in UsersListPanel.Children)
+            {
+                var txt = (TextBox)existingRow.Children[0];
+                if (txt.Text.Equals(usernameInserito, StringComparison.OrdinalIgnoreCase))
+                {
+                    TxtNuovoUtente.Text = ""; // Pulisce e ignora
+                    return;
+                }
+            }
+
+            // 3. TUTTO OK: Creiamo la riga
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(0, 5, 0, 5) };
+
+            var txtUsername = new TextBox { Text = usernameInserito, IsReadOnly = true, Width = 300 };
+            var btnRemove = new Button { Content = "❌" };
+
+            btnRemove.Click += (s, args) => UsersListPanel.Children.Remove(row);
+
+            row.Children.Add(txtUsername);
+            row.Children.Add(btnRemove);
+
+            UsersListPanel.Children.Add(row);
+
+            TxtNuovoUtente.Text = ""; // Pulisce il campo di inserimento
+        }
 
         // Quando un utente clicca su una query dalla lista:
         private async void ListaEstrazioni_ItemClick(object sender, ItemClickEventArgs e)
