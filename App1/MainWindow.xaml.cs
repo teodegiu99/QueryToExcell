@@ -18,6 +18,7 @@ namespace QueryToExcell
     {
         public string CurrentWindowsUser { get; set; }
         public bool IsCedUser { get; set; }
+        private int? _queryInModificaId = null;
 
         public MainWindow()
         {
@@ -42,16 +43,70 @@ namespace QueryToExcell
                 IsCedUser = true; // Salviamo questa info per usarla dopo quando mostriamo la lista
             }
         }
-
         private async void BtnAddQuery_Click(object sender, RoutedEventArgs e)
         {
-            // Pulisce i campi se erano stati riempiti precedentemente
+            _queryInModificaId = null; // Stiamo CREANDO, quindi nessun ID!
+            DialogNuovaQuery.Title = "Inserisci Nuova Estrazione"; // Titolo per creazione
+
             TxtTitolo.Text = "";
             TxtSql.Text = "";
-            UsersListPanel.Children.Clear(); // <-- AGGIUNGI QUESTO
+            ParametersListPanel.Children.Clear();
+            UsersListPanel.Children.Clear();
             TxtNuovoUtente.Text = "";
-            ParametersListPanel.Children.Clear(); // Svuota i parametri
 
+            DialogNuovaQuery.XamlRoot = this.Content.XamlRoot;
+            await DialogNuovaQuery.ShowAsync();
+        }
+
+        private async void BtnModificaQuery_Click(object sender, RoutedEventArgs e)
+        {
+            var button = (Button)sender;
+            var queryDaModificare = (QueryInfo)button.Tag;
+
+            if (queryDaModificare == null) return;
+
+            // Impostiamo l'ID così sappiamo che stiamo salvando una modifica!
+            _queryInModificaId = queryDaModificare.Id;
+            DialogNuovaQuery.Title = $"Modifica Estrazione: {queryDaModificare.Title}";
+
+            // 1. Riempiamo Titolo e SQL
+            TxtTitolo.Text = queryDaModificare.Title;
+            TxtSql.Text = queryDaModificare.SqlText;
+
+            // 2. Riempiamo i Parametri (svuotiamo prima la lista)
+            ParametersListPanel.Children.Clear();
+            foreach (var p in queryDaModificare.Parameters)
+            {
+                // Ricreiamo le righe grafiche programmaticamente
+                var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(0, 5, 0, 5) };
+                var txtName = new TextBox { Text = p.Name, Width = 150 };
+                var cmbType = new ComboBox { Width = 120, SelectedIndex = p.Type == "text" ? 0 : (p.Type == "number" ? 1 : 2) };
+                cmbType.Items.Add("text"); cmbType.Items.Add("number"); cmbType.Items.Add("date");
+                var txtLabel = new TextBox { Text = p.Label, Width = 200 };
+                var btnRemove = new Button { Content = "❌" };
+                btnRemove.Click += (s, args) => ParametersListPanel.Children.Remove(row);
+
+                row.Children.Add(txtName); row.Children.Add(cmbType); row.Children.Add(txtLabel); row.Children.Add(btnRemove);
+                ParametersListPanel.Children.Add(row);
+            }
+
+            // 3. Riempiamo gli Utenti dal Database
+            UsersListPanel.Children.Clear();
+            var dbService = new DatabaseService();
+            var utentiAssegnati = dbService.OttieniUtentiPerQuery(queryDaModificare.Id);
+
+            foreach (var user in utentiAssegnati)
+            {
+                var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(0, 5, 0, 5) };
+                var txtUsername = new TextBox { Text = user, IsReadOnly = true, Width = 300 };
+                var btnRemove = new Button { Content = "❌" };
+                btnRemove.Click += (s, args) => UsersListPanel.Children.Remove(row);
+
+                row.Children.Add(txtUsername); row.Children.Add(btnRemove);
+                UsersListPanel.Children.Add(row);
+            }
+
+            // 4. Apriamo la Modale!
             DialogNuovaQuery.XamlRoot = this.Content.XamlRoot;
             await DialogNuovaQuery.ShowAsync();
         }
@@ -119,10 +174,18 @@ namespace QueryToExcell
 
                 // Salviamo su DB!
                 var dbService = new DatabaseService();
-                dbService.SalvaNuovaQuery(TxtTitolo.Text, TxtSql.Text, parametri, utentiAbilitati);
-
-                // Mostriamo un avviso rapido (facoltativo)
-                TxtUserInfo.Text = $"Utente: {CurrentWindowsUser} - ✅ Query '{TxtTitolo.Text}' salvata con successo!";
+                if (_queryInModificaId == null)
+                {
+                    // CREAZIONE (ID è null)
+                    dbService.SalvaNuovaQuery(TxtTitolo.Text, TxtSql.Text, parametri, utentiAbilitati);
+                    TxtUserInfo.Text = $"✅ Estrazione '{TxtTitolo.Text}' creata con successo!";
+                }
+                else
+                {
+                    // MODIFICA (Abbiamo un ID in memoria)
+                    dbService.AggiornaQuery(_queryInModificaId.Value, TxtTitolo.Text, TxtSql.Text, parametri, utentiAbilitati);
+                    TxtUserInfo.Text = $"✅ Estrazione '{TxtTitolo.Text}' aggiornata con successo!";
+                }
                 CaricaListaQuery();
             }
             catch (Exception ex)

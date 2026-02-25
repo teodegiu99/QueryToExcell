@@ -274,5 +274,104 @@ namespace QueryToExcell.Services // Ricorda di usare il namespace corretto del t
                 }
             }
         }
+
+        public List<string> OttieniUtentiPerQuery(int queryId)
+        {
+            var utenti = new List<string>();
+            using (var conn = new NpgsqlConnection(_connectionString))
+            {
+                conn.Open();
+                string sql = @"SELECT ua.username 
+                       FROM estrazioni_accessi ea 
+                       INNER JOIN utenti_app ua ON ea.utente_id = ua.id 
+                       WHERE ea.query_id = @qid";
+
+                using (var cmd = new NpgsqlCommand(sql, conn))
+                {
+                    cmd.Parameters.AddWithValue("qid", queryId);
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            utenti.Add(reader.GetString(0));
+                        }
+                    }
+                }
+            }
+            return utenti;
+        }
+
+        // 2. Aggiorna tutto (Query, Parametri e Accessi)
+        public void AggiornaQuery(int queryId, string titolo, string sqlText, List<QueryParameter> parametri, List<string> utentiAbilitati)
+        {
+            using (var conn = new NpgsqlConnection(_connectionString))
+            {
+                conn.Open();
+
+                // A. Aggiorniamo il testo e il titolo
+                string updQuery = "UPDATE estrazioni_query SET titolo = @titolo, sql_text = @sql WHERE id = @id;";
+                using (var cmd = new NpgsqlCommand(updQuery, conn))
+                {
+                    cmd.Parameters.AddWithValue("titolo", titolo);
+                    cmd.Parameters.AddWithValue("sql", sqlText);
+                    cmd.Parameters.AddWithValue("id", queryId);
+                    cmd.ExecuteNonQuery();
+                }
+
+                // B. Cancelliamo i vecchi parametri e inseriamo quelli nuovi
+                using (var cmdDelP = new NpgsqlCommand("DELETE FROM estrazioni_parametri WHERE query_id = @id", conn))
+                {
+                    cmdDelP.Parameters.AddWithValue("id", queryId);
+                    cmdDelP.ExecuteNonQuery();
+                }
+
+                foreach (var parametro in parametri)
+                {
+                    string insertParam = "INSERT INTO estrazioni_parametri (query_id, nome_parametro, tipo_parametro, label_utente) VALUES (@qid, @nome, @tipo, @label);";
+                    using (var pCmd = new NpgsqlCommand(insertParam, conn))
+                    {
+                        pCmd.Parameters.AddWithValue("qid", queryId);
+                        pCmd.Parameters.AddWithValue("nome", parametro.Name);
+                        pCmd.Parameters.AddWithValue("tipo", parametro.Type);
+                        pCmd.Parameters.AddWithValue("label", parametro.Label);
+                        pCmd.ExecuteNonQuery();
+                    }
+                }
+
+                // C. Cancelliamo i vecchi accessi e inseriamo i nuovi (solo utenti validati)
+                using (var cmdDelA = new NpgsqlCommand("DELETE FROM estrazioni_accessi WHERE query_id = @id", conn))
+                {
+                    cmdDelA.Parameters.AddWithValue("id", queryId);
+                    cmdDelA.ExecuteNonQuery();
+                }
+
+                foreach (var username in utentiAbilitati)
+                {
+                    string utentePulito = RimuoviDominio(username);
+                    string queryIdUtente = "SELECT id FROM utenti_app WHERE LOWER(username) = LOWER(@usr) OR LOWER(username) LIKE LOWER('%\\' || @usr)";
+                    int utenteId = 0;
+
+                    using (var cmdGetId = new NpgsqlCommand(queryIdUtente, conn))
+                    {
+                        cmdGetId.Parameters.AddWithValue("usr", utentePulito);
+                        var result = cmdGetId.ExecuteScalar();
+                        if (result != null)
+                        {
+                            utenteId = Convert.ToInt32(result);
+                            string insertAccesso = "INSERT INTO estrazioni_accessi (query_id, utente_id) VALUES (@qid, @uid)";
+                            using (var cmdAcc = new NpgsqlCommand(insertAccesso, conn))
+                            {
+                                cmdAcc.Parameters.AddWithValue("qid", queryId);
+                                cmdAcc.Parameters.AddWithValue("uid", utenteId);
+                                cmdAcc.ExecuteNonQuery();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+
+
     }
 }
