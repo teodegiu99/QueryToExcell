@@ -33,6 +33,7 @@
                     <Style TargetType="ListViewItem">
                         <Setter Property="Padding" Value="0" />
                         <Setter Property="Margin" Value="0,0,0,10" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                     </Style>
                 </ListView.ItemContainerStyle>
                 <ListView.ItemTemplate>
@@ -48,6 +49,7 @@
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
 
                                 <FontIcon Glyph="&#xE81E;" FontSize="24" Foreground="{ThemeResource SystemAccentColor}" Margin="0,0,16,0" VerticalAlignment="Center"/>
@@ -57,7 +59,17 @@
                                     <TextBlock Text="Clicca per inserire i parametri ed esportare in Excel" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="0,4,0,0"/>
                                 </StackPanel>
 
-                                <FontIcon Grid.Column="2" Glyph="&#xE72A;" FontSize="16" Foreground="{ThemeResource TextFillColorTertiaryBrush}" VerticalAlignment="Center"/>
+                                <FontIcon Grid.Column="2" Glyph="&#xE72A;" FontSize="16" Foreground="{ThemeResource TextFillColorTertiaryBrush}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+
+                                <Button Grid.Column="3"
+                                        Visibility="{x:Bind PulsanteEliminaVisibile}"
+                                        Tag="{x:Bind}" 
+                                        Click="BtnEliminaQuery_Click"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        ToolTipService.ToolTip="Elimina questa estrazione">
+                                    <FontIcon Glyph="&#xE74D;" Foreground="Red" />
+                                </Button>
                             </Grid>
                         </Border>
                     </DataTemplate>

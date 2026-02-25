@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using Microsoft.UI.Xaml;
+using System.Collections.Generic;
 
 namespace QueryToExcell.Models
 {
@@ -9,5 +10,7 @@ namespace QueryToExcell.Models
         public string SqlText { get; set; }
         // Lista dei parametri richiesti da questa query
         public List<QueryParameter> Parameters { get; set; } = new List<QueryParameter>();
+
+        public Visibility PulsanteEliminaVisibile { get; set; } = Visibility.Collapsed;
     }
 }

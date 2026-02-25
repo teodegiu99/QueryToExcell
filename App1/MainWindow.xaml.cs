@@ -17,6 +17,7 @@ namespace QueryToExcell
     public sealed partial class MainWindow : Window
     {
         public string CurrentWindowsUser { get; set; }
+        public bool IsCedUser { get; set; }
 
         public MainWindow()
         {
@@ -38,6 +39,7 @@ namespace QueryToExcell
             {
                 // Se sei del CED, ti fa vedere il bottone magico in alto a destra!
                 BtnAddQuery.Visibility = Visibility.Visible;
+                IsCedUser = true; // Salviamo questa info per usarla dopo quando mostriamo la lista
             }
         }
 
@@ -123,11 +125,19 @@ namespace QueryToExcell
             }
         }
 
-        private void CaricaListaQuery()
-        {
-            var dbService = new DatabaseService();
-            ListaEstrazioni.ItemsSource = dbService.OttieniTutteLeQuery();
-        }
+     private void CaricaListaQuery()
+{
+    var dbService = new DatabaseService();
+    var listaDati = dbService.OttieniTutteLeQuery();
+
+    // Se l'utente fa parte del CED (IsCedUser = true), rendiamo visibile il cestino
+    foreach (var query in listaDati)
+    {
+        query.PulsanteEliminaVisibile = this.IsCedUser ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    ListaEstrazioni.ItemsSource = listaDati;
+}
 
         // Quando un utente clicca su una query dalla lista:
         private async void ListaEstrazioni_ItemClick(object sender, ItemClickEventArgs e)
@@ -270,6 +280,44 @@ namespace QueryToExcell
             {
                 // Sicurezza extra: spegne la rotellina in qualsiasi caso (anche errori imprevisti)
                 LoadingOverlay.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private async void BtnEliminaQuery_Click(object sender, RoutedEventArgs e)
+        {
+            // Capiamo quale bottone è stato premuto e recuperiamo la query nascosta nel "Tag"
+            var button = (Button)sender;
+            var queryDaEliminare = (QueryInfo)button.Tag;
+
+            if (queryDaEliminare == null) return;
+
+            // Chiediamo conferma prima di fare danni irreparabili!
+            var dialog = new ContentDialog
+            {
+                Title = "Conferma Eliminazione",
+                Content = $"Sei sicuro di voler eliminare definitivamente l'estrazione '{queryDaEliminare.Title}'?\nL'operazione è irreversibile e cancellerà anche tutte le variabili associate.",
+                PrimaryButtonText = "Sì, Elimina",
+                CloseButtonText = "Annulla",
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            var result = await dialog.ShowAsync();
+
+            if (result == ContentDialogResult.Primary)
+            {
+                try
+                {
+                    var dbService = new DatabaseService();
+                    dbService.EliminaQuery(queryDaEliminare.Id);
+
+                    // Avviso di successo e ricaricamento della lista
+                    TxtUserInfo.Text = $"Utente: {CurrentWindowsUser} - 🗑️ Estrazione '{queryDaEliminare.Title}' eliminata!";
+                    CaricaListaQuery();
+                }
+                catch (Exception ex)
+                {
+                    TxtUserInfo.Text = $"ERRORE ELIMINAZIONE: {ex.Message}";
+                }
             }
         }
     }

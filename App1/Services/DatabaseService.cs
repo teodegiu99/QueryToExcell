@@ -184,5 +184,21 @@ namespace QueryToExcell.Services // Ricorda di usare il namespace corretto del t
                 }
             }
         }
+
+        public void EliminaQuery(int queryId)
+        {
+            using (var conn = new NpgsqlConnection(_connectionString))
+            {
+                conn.Open();
+                // Grazie al CASCADE, questo cancellerà in automatico anche le righe in estrazioni_parametri!
+                string sql = "DELETE FROM estrazioni_query WHERE id = @id";
+
+                using (var cmd = new NpgsqlCommand(sql, conn))
+                {
+                    cmd.Parameters.AddWithValue("id", queryId);
+                    cmd.ExecuteNonQuery();
+                }
+            }
+        }
     }
 }
