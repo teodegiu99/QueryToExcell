@@ -1,7 +1,14 @@
-using QueryToExcell.Services; // Assicurati che il nome sia corretto
+﻿using ClosedXML.Excel;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using QueryToExcell.Models;
+using QueryToExcell.Services; // Assicurati che il nome sia corretto
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Security.Principal;
+using System.Data; // <--- RISOLVE L'ERRORE DATATABLE
+using Windows.Storage.Pickers;
 
 namespace QueryToExcell
 {
@@ -15,42 +22,225 @@ namespace QueryToExcell
 
             CurrentWindowsUser = WindowsIdentity.GetCurrent().Name;
 
-            // NON TAGLIAMO PI� NIENTE! Passiamo l'utente intero con tutto il dominio.
+            // NON TAGLIAMO PIÙ NIENTE! Passiamo l'utente intero con tutto il dominio.
             string utenteCompleto = CurrentWindowsUser;
 
-            TxtDebugInfo.Text = $"Sto cercando l'utente completo '{utenteCompleto}' nel database...";
 
             VerificaSeUtenteCED(utenteCompleto);
+            CaricaListaQuery();
+        }
+        private void VerificaSeUtenteCED(string usernameDaCercare)
+        {
+            var dbService = new DatabaseService();
+            if (dbService.CheckIfUserIsIT(usernameDaCercare))
+            {
+                // Se sei del CED, ti fa vedere il bottone magico in alto a destra!
+                BtnAddQuery.Visibility = Visibility.Visible;
+            }
         }
 
-        private void VerificaSeUtenteCED(string usernameDaCercare)
+        private async void BtnAddQuery_Click(object sender, RoutedEventArgs e)
+        {
+            // Pulisce i campi se erano stati riempiti precedentemente
+            TxtTitolo.Text = "";
+            TxtSql.Text = "";
+            ParametersListPanel.Children.Clear(); // Svuota i parametri
+
+            DialogNuovaQuery.XamlRoot = this.Content.XamlRoot;
+            await DialogNuovaQuery.ShowAsync();
+        }
+
+        // 2. Aggiunge una riga dinamicamente per inserire Nome, Tipo e Label del parametro
+        private void BtnAddParameterRow_Click(object sender, RoutedEventArgs e)
+        {
+            // Creiamo una riga (StackPanel orizzontale)
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(0, 5, 0, 5) };
+
+            var txtName = new TextBox { PlaceholderText = "es. @DataInizio", Width = 150 };
+
+            var cmbType = new ComboBox { Width = 120, SelectedIndex = 0 };
+            cmbType.Items.Add("text");
+            cmbType.Items.Add("number");
+            cmbType.Items.Add("date");
+
+            var txtLabel = new TextBox { PlaceholderText = "Testo per l'utente (es. Data inizio)", Width = 200 };
+
+            var btnRemove = new Button { Content = "❌" };
+
+            // Se l'utente clicca la X, rimuoviamo la riga
+            btnRemove.Click += (s, args) => ParametersListPanel.Children.Remove(row);
+
+            // Aggiungiamo i controlli alla riga
+            row.Children.Add(txtName);
+            row.Children.Add(cmbType);
+            row.Children.Add(txtLabel);
+            row.Children.Add(btnRemove);
+
+            // Aggiungiamo la riga al pannello nella Modale
+            ParametersListPanel.Children.Add(row);
+        }
+
+        // 3. Salva tutto nel database quando si clicca "Salva Estrazione"
+        private void DialogNuovaQuery_PrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
         {
             try
             {
-                var dbService = new DatabaseService();
+                var parametri = new List<QueryParameter>();
 
-                // Chiamiamo il database
-                bool isCedUser = dbService.CheckIfUserIsIT(usernameDaCercare);
-
-                if (isCedUser)
+                // Leggiamo tutte le righe dei parametri che abbiamo aggiunto
+                foreach (StackPanel row in ParametersListPanel.Children)
                 {
-                    TxtDebugInfo.Text = "Autenticazione riuscita: Sei nel gruppo IT!";
-                    TxtDebugInfo.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Green);
+                    var txtName = (TextBox)row.Children[0];
+                    var cmbType = (ComboBox)row.Children[1];
+                    var txtLabel = (TextBox)row.Children[2];
 
-                    // Mostriamo il bottone MANUALMENTE (metodo sicuro)
-                    BtnAddQuery.Visibility = Visibility.Visible;
+                    if (!string.IsNullOrWhiteSpace(txtName.Text))
+                    {
+                        parametri.Add(new QueryParameter
+                        {
+                            Name = txtName.Text,
+                            Type = cmbType.SelectedItem.ToString(),
+                            Label = txtLabel.Text
+                        });
+                    }
+                }
+
+                // Salviamo su DB!
+                var dbService = new DatabaseService();
+                dbService.SalvaNuovaQuery(TxtTitolo.Text, TxtSql.Text, parametri);
+
+                // Mostriamo un avviso rapido (facoltativo)
+                TxtUserInfo.Text = $"Utente: {CurrentWindowsUser} - ✅ Query '{TxtTitolo.Text}' salvata con successo!";
+                CaricaListaQuery();
+            }
+            catch (Exception ex)
+            {
+                // In caso di errore SQL, impediamo alla modale di chiudersi e mostriamo l'errore
+                args.Cancel = true;
+                TxtSql.Text = $"ERRORE SALVATAGGIO: {ex.Message}\n\n{TxtSql.Text}";
+            }
+        }
+
+        private void CaricaListaQuery()
+        {
+            var dbService = new DatabaseService();
+            ListaEstrazioni.ItemsSource = dbService.OttieniTutteLeQuery();
+        }
+
+        // Quando un utente clicca su una query dalla lista:
+        private async void ListaEstrazioni_ItemClick(object sender, ItemClickEventArgs e)
+        {
+            var querySelezionata = (QueryInfo)e.ClickedItem;
+
+            // Creiamo il form dinamicamente in base ai parametri richiesti
+            var formPanel = new StackPanel { Spacing = 15 };
+            var dizionarioControlli = new Dictionary<string, FrameworkElement>();
+
+            foreach (var param in querySelezionata.Parameters)
+            {
+                formPanel.Children.Add(new TextBlock { Text = param.Label, FontWeight = Microsoft.UI.Text.FontWeights.Bold });
+
+                FrameworkElement inputControl;
+
+                if (param.Type == "date")
+                {
+                    inputControl = new CalendarDatePicker { HorizontalAlignment = HorizontalAlignment.Stretch };
+                }
+                else if (param.Type == "number")
+                {
+                    inputControl = new NumberBox { SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline };
                 }
                 else
                 {
-                    TxtDebugInfo.Text = $"Accesso base. L'utente '{usernameDaCercare}' non � nella tabella utenti_it.";
-                    TxtDebugInfo.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Orange);
+                    inputControl = new TextBox();
+                }
+
+                formPanel.Children.Add(inputControl);
+                dizionarioControlli.Add(param.Name, inputControl);
+            }
+
+            var dialog = new ContentDialog
+            {
+                Title = $"Esecuzione: {querySelezionata.Title}",
+                Content = formPanel,
+                PrimaryButtonText = "Esegui e Scarica Excel",
+                CloseButtonText = "Annulla",
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            var result = await dialog.ShowAsync();
+
+            if (result == ContentDialogResult.Primary)
+            {
+                GeneraExcel(querySelezionata, dizionarioControlli);
+            }
+        }
+
+        // Il motore che estrae ed esporta:
+        private async void GeneraExcel(QueryInfo query, Dictionary<string, FrameworkElement> controlli)
+        {
+            try
+            {
+                // 1. Raccogliamo i valori inseriti dall'utente
+                var parametriPerOracle = new Dictionary<string, object>();
+
+                foreach (var ctrl in controlli)
+                {
+                    string nomeParametro = ctrl.Key;
+                    object valore = null;
+
+                    if (ctrl.Value is CalendarDatePicker datePicker && datePicker.Date.HasValue)
+                        valore = datePicker.Date.Value.DateTime;
+                    else if (ctrl.Value is NumberBox numberBox)
+                        valore = numberBox.Value;
+                    else if (ctrl.Value is TextBox textBox)
+                        valore = textBox.Text;
+
+                    parametriPerOracle.Add(nomeParametro, valore);
+                }
+
+                // 2. Eseguiamo su Oracle!
+                var dbService = new DatabaseService();
+                DataTable datiEstratti = dbService.EseguiEstrazioneOracle(query.SqlText, parametriPerOracle);
+
+                // 3. Generiamo l'Excel in memoria
+                using var workbook = new XLWorkbook();
+                var worksheet = workbook.Worksheets.Add("Estrazione");
+                worksheet.Cell(1, 1).InsertTable(datiEstratti);
+                worksheet.Columns().AdjustToContents();
+
+                using var memoryStream = new MemoryStream();
+                workbook.SaveAs(memoryStream);
+                byte[] excelBytes = memoryStream.ToArray();
+
+                // 4. Chiediamo all'utente dove salvare il file
+                var savePicker = new FileSavePicker();
+                var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+                WinRT.Interop.InitializeWithWindow.Initialize(savePicker, hwnd);
+
+                savePicker.SuggestedStartLocation = PickerLocationId.Desktop;
+                savePicker.FileTypeChoices.Add("File Excel", new List<string>() { ".xlsx" });
+                savePicker.SuggestedFileName = $"{query.Title}_{DateTime.Now:yyyyMMdd}.xlsx";
+
+                var file = await savePicker.PickSaveFileAsync();
+
+                if (file != null)
+                {
+                    await Windows.Storage.FileIO.WriteBytesAsync(file, excelBytes);
+                    TxtUserInfo.Text = $"✅ Excel salvato correttamente!";
                 }
             }
             catch (Exception ex)
             {
-                // Se la connessione fallisce, lo vediamo a schermo!
-                TxtDebugInfo.Text = $"ERRORE DATABASE: {ex.Message}";
-                TxtDebugInfo.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Red);
+                // Mostriamo l'errore se la query fallisce (es. tabella inesistente su Oracle)
+                var errDialog = new ContentDialog
+                {
+                    Title = "Errore durante l'estrazione",
+                    Content = ex.Message,
+                    CloseButtonText = "Ok",
+                    XamlRoot = this.Content.XamlRoot
+                };
+                await errDialog.ShowAsync();
             }
         }
     }

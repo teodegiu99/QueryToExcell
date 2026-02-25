@@ -1,19 +1,62 @@
 <Window
     x:Class="QueryToExcell.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:models="using:QueryToExcell.Models">
 
     <Grid Padding="20">
-        <StackPanel Spacing="10">
-            <TextBlock Text="Sistema Estrazioni Dati" FontSize="24" FontWeight="Bold"/>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
 
-            <TextBlock Text="{x:Bind CurrentWindowsUser}" FontSize="14" Foreground="Gray"/>
-
-            <TextBlock x:Name="TxtDebugInfo" FontSize="14" Foreground="Red" TextWrapping="Wrap" />
+        <Grid Grid.Row="0" Margin="0,0,0,20">
+            <StackPanel>
+                <TextBlock Text="Sistema Estrazioni Dati" FontSize="24" FontWeight="Bold"/>
+                <TextBlock x:Name="TxtUserInfo" FontSize="14" Foreground="Gray"/>
+            </StackPanel>
 
             <Button x:Name="BtnAddQuery" 
-                    Content="➕ Aggiungi Nuova Query (Solo CED)" 
-                    Visibility="Collapsed" />
-        </StackPanel>
+                    Content="➕ Aggiungi Nuova Query" 
+                    HorizontalAlignment="Right" 
+                    VerticalAlignment="Top"
+                    Visibility="Collapsed" 
+                    Click="BtnAddQuery_Click" />
+        </Grid>
+
+        <ListView x:Name="ListaEstrazioni" Grid.Row="1"
+                  IsItemClickEnabled="True" ItemClick="ListaEstrazioni_ItemClick">
+            <ListView.ItemTemplate>
+                <DataTemplate x:DataType="models:QueryInfo">
+                    <StackPanel Padding="15">
+                        <TextBlock Text="{x:Bind Title}" FontSize="18" FontWeight="SemiBold" Foreground="#005A9E"/>
+                    </StackPanel>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+
+        <ContentDialog x:Name="DialogNuovaQuery" 
+                       Title="Inserisci Nuova Estrazione" 
+                       PrimaryButtonText="Salva Estrazione" 
+                       CloseButtonText="Annulla"
+                       PrimaryButtonClick="DialogNuovaQuery_PrimaryButtonClick">
+            <ScrollViewer>
+                <StackPanel Spacing="10" Width="550">
+                    <TextBox x:Name="TxtTitolo" Header="Titolo Estrazione (es. Vendite)" />
+
+                    <TextBox x:Name="TxtSql" Header="Query SQL (Usa :Nome per Oracle)" 
+                             AcceptsReturn="True" Height="150" 
+                             ScrollViewer.VerticalScrollBarVisibility="Auto" 
+                             FontFamily="Consolas" />
+
+                    <TextBlock Text="Variabili (Parametri SQL)" FontWeight="Bold" Margin="0,15,0,0"/>
+
+                    <StackPanel x:Name="ParametersListPanel" Spacing="5" />
+
+                    <Button Content="➕ Aggiungi Variabile" Click="BtnAddParameterRow_Click" Margin="0,10,0,0"/>
+                </StackPanel>
+            </ScrollViewer>
+        </ContentDialog>
+
     </Grid>
-    </Window>
+</Window>
