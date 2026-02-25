@@ -9,6 +9,8 @@ using System.IO;
 using System.Security.Principal;
 using System.Data; // <--- RISOLVE L'ERRORE DATATABLE
 using Windows.Storage.Pickers;
+using System.Threading.Tasks;
+
 
 namespace QueryToExcell
 {
@@ -181,7 +183,7 @@ namespace QueryToExcell
         {
             try
             {
-                // 1. Raccogliamo i valori inseriti dall'utente
+                // 1. Leggiamo i valori inseriti dall'utente ORA, prima di andare in background
                 var parametriPerOracle = new Dictionary<string, object>();
 
                 foreach (var ctrl in controlli)
@@ -191,7 +193,7 @@ namespace QueryToExcell
 
                     if (ctrl.Value is CalendarDatePicker datePicker && datePicker.Date.HasValue)
                         valore = datePicker.Date.Value.DateTime;
-                    else if (ctrl.Value is NumberBox numberBox)
+                    else if (ctrl.Value is NumberBox numberBox && !double.IsNaN(numberBox.Value))
                         valore = numberBox.Value;
                     else if (ctrl.Value is TextBox textBox)
                         valore = textBox.Text;
@@ -199,40 +201,62 @@ namespace QueryToExcell
                     parametriPerOracle.Add(nomeParametro, valore);
                 }
 
-                // 2. Eseguiamo su Oracle!
-                var dbService = new DatabaseService();
-                DataTable datiEstratti = dbService.EseguiEstrazioneOracle(query.SqlText, parametriPerOracle);
+                // =======================================================
+                // 2. ACCENDIAMO LA SCHERMATA DI CARICAMENTO!
+                LoadingOverlay.Visibility = Visibility.Visible;
+                // =======================================================
 
-                // 3. Generiamo l'Excel in memoria
-                using var workbook = new XLWorkbook();
-                var worksheet = workbook.Worksheets.Add("Estrazione");
-                worksheet.Cell(1, 1).InsertTable(datiEstratti);
-                worksheet.Columns().AdjustToContents();
+                // 3. Spostiamo il lavoro pesante su un thread separato (Background) 
+                // in modo da far girare fluida la rotellina
+                byte[] excelBytes = await Task.Run(() =>
+                {
+                    // A. Interroga Oracle
+                    var dbService = new DatabaseService();
+                    DataTable datiEstratti = dbService.EseguiEstrazioneOracle(query.SqlText, parametriPerOracle);
 
-                using var memoryStream = new MemoryStream();
-                workbook.SaveAs(memoryStream);
-                byte[] excelBytes = memoryStream.ToArray();
+                    // B. Genera Excel (ClosedXML)
+                    using var workbook = new XLWorkbook();
+                    var worksheet = workbook.Worksheets.Add("Estrazione");
+                    worksheet.Cell(1, 1).InsertTable(datiEstratti);
+                    worksheet.Columns().AdjustToContents();
 
-                // 4. Chiediamo all'utente dove salvare il file
+                    // C. Salva l'Excel in memoria e lo restituisce alla nostra App principale
+                    using var memoryStream = new MemoryStream();
+                    workbook.SaveAs(memoryStream);
+                    return memoryStream.ToArray();
+                });
+
+                // =======================================================
+                // 4. LAVORO FINITO! Spegniamo il caricamento per far scegliere la cartella
+                LoadingOverlay.Visibility = Visibility.Collapsed;
+                // =======================================================
+
+                // 5. Chiediamo all'utente dove salvare il file
                 var savePicker = new FileSavePicker();
                 var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
                 WinRT.Interop.InitializeWithWindow.Initialize(savePicker, hwnd);
 
                 savePicker.SuggestedStartLocation = PickerLocationId.Desktop;
                 savePicker.FileTypeChoices.Add("File Excel", new List<string>() { ".xlsx" });
-                savePicker.SuggestedFileName = $"{query.Title}_{DateTime.Now:yyyyMMdd}.xlsx";
+
+                // Puliamo il titolo da eventuali spazi o caratteri strani
+                string titoloPulito = string.Join("_", query.Title.Split(Path.GetInvalidFileNameChars()));
+                savePicker.SuggestedFileName = $"Estrazione_{titoloPulito}_{DateTime.Now:yyyyMMdd}.xlsx";
 
                 var file = await savePicker.PickSaveFileAsync();
 
                 if (file != null)
                 {
+                    // Salviamo fisicamente il file sul PC dell'utente
                     await Windows.Storage.FileIO.WriteBytesAsync(file, excelBytes);
-                    TxtUserInfo.Text = $"✅ Excel salvato correttamente!";
+                    TxtUserInfo.Text = $"✅ Excel '{query.Title}' salvato correttamente!";
                 }
             }
             catch (Exception ex)
             {
-                // Mostriamo l'errore se la query fallisce (es. tabella inesistente su Oracle)
+                // Se c'è un errore (es. query sbagliata), spegniamo la rotellina prima di dare l'errore!
+                LoadingOverlay.Visibility = Visibility.Collapsed;
+
                 var errDialog = new ContentDialog
                 {
                     Title = "Errore durante l'estrazione",
@@ -241,6 +265,11 @@ namespace QueryToExcell
                     XamlRoot = this.Content.XamlRoot
                 };
                 await errDialog.ShowAsync();
+            }
+            finally
+            {
+                // Sicurezza extra: spegne la rotellina in qualsiasi caso (anche errori imprevisti)
+                LoadingOverlay.Visibility = Visibility.Collapsed;
             }
         }
     }

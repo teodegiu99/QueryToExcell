@@ -113,23 +113,29 @@ namespace QueryToExcell.Services // Ricorda di usare il namespace corretto del t
         {
             var dataTable = new DataTable();
 
-            using (var conn = new OracleConnection(_oracleConnectionString)) // Usa la stringa Oracle
+            using (var conn = new OracleConnection(_oracleConnectionString))
             {
                 conn.Open();
-                using (var cmd = new OracleCommand(sqlText, conn))
+
+                // PULIZIA ESTREMA DELLA QUERY:
+                // 1. Togliamo gli invii/a capo strani di Windows
+                // 2. Togliamo eventuali punti e virgola finali sfuggiti al CED
+                string queryPulita = sqlText.Replace("\r\n", " ").Replace("\n", " ").Trim().TrimEnd(';');
+
+                using (var cmd = new OracleCommand(queryPulita, conn))
                 {
-                    // FONDAMENTALE IN ORACLE: Mappa i parametri per nome e non per posizione!
                     cmd.BindByName = true;
 
-                    // Aggiungiamo i parametri che l'utente ha compilato nella modale
                     foreach (var param in parametriInseriti)
                     {
-                        // Rimuoviamo i due punti ":" se per caso il CED li ha salvati nel nome su Postgres
-                        string nomePulito = param.Key.Replace(":", "");
-                        cmd.Parameters.Add(new OracleParameter(nomePulito, param.Value));
+                        string nomePulito = param.Key.Replace(":", "").Trim();
+
+                        // Gestione dei valori Nulli sicura per Oracle
+                        object valoreDaPassare = param.Value ?? DBNull.Value;
+
+                        cmd.Parameters.Add(new OracleParameter(nomePulito, valoreDaPassare));
                     }
 
-                    // Eseguiamo la query e carichiamo i risultati in una DataTable
                     using (var reader = cmd.ExecuteReader())
                     {
                         dataTable.Load(reader);
